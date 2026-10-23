@@ -1,0 +1,58 @@
+name: GoldAudit 24/7 Cloud Deal Tracker
+
+on:
+  # 1. Runs automatically during active hours (9:00 AM - 12:30 AM IST)
+  # Quiet window: 12:30 AM to 9:00 AM IST (search completely paused at night)
+  # 9:00 AM IST = 03:30 UTC | 12:30 AM IST = 19:00 UTC
+  schedule:
+    - cron: '30,45 3 * * *'    # 9:00 AM, 9:15 AM IST
+    - cron: '*/15 4-18 * * *'  # 9:30 AM to 12:15 AM IST (every 15 mins)
+    - cron: '0 19 * * *'       # 12:30 AM IST (final run before night pause)
+  
+  # 2. Allows 1-click manual test from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      loop_minutes:
+        description: 'Duration to run radar loop in minutes (0 for 1-shot test)'
+        required: false
+        default: '0'
+      poll_interval:
+        description: 'Seconds between sweeps'
+        required: false
+        default: '20'
+      radar_mode:
+        description: 'Radar mode: "single" or "auto"'
+        required: false
+        default: 'single'
+      send_radar_status:
+        description: 'Send status report to Telegram even if no deal is live'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  track-deals:
+    name: Check Myntra Blink Deals & Dispatch Alerts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Sub-Minute Blink Deal Radar
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          FORCE_ALERT: ${{ inputs.send_radar_status && 'true' || 'false' }}
+          LOOP_MINUTES: ${{ inputs.loop_minutes || '0' }}
+          POLL_INTERVAL: ${{ inputs.poll_interval || '20' }}
+          RADAR_MODE: ${{ inputs.radar_mode || (github.event_name == 'schedule' && 'single' || 'auto') }}
+        run: |
+          python track_deals.py
