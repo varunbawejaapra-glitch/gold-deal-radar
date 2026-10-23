@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 GoldAudit - 24/7 Zero-Hoax Myntra Blink Deal Radar & Telegram Dispatcher
-Exclusively for CA Jyotika Kukreja (@financegyannjk)
 
 STRICT ACCURACY, SNOOZE & ANTI-SPAM DIRECTIVES:
 1. ZERO HOAX ALERTS: Never assume or fabricate a coupon (e.g. BLINKDEAL6).
@@ -30,7 +29,9 @@ from datetime import datetime, timezone, timedelta
 # In a Public GitHub Repository, credentials MUST come strictly from GitHub Encrypted Secrets
 # (Settings -> Secrets and variables -> Actions). Never hardcode tokens in public code!
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+raw_chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+# Support one or multiple recipients (comma, space, or semicolon separated)
+CHAT_IDS = [cid.strip() for cid in re.split(r"[,;\s]+", raw_chat) if cid.strip()]
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -151,39 +152,40 @@ def save_snooze_cache(cache):
         print(f"[WARN] Error saving snooze cache: {e}")
 
 def send_telegram_message(text, reply_markup=None):
-    """Sends an authenticated message to Telegram, optionally with interactive inline buttons."""
+    """Sends an authenticated message to all configured Telegram chats, optionally with interactive inline buttons."""
     clean_bot_token = BOT_TOKEN.replace("\n", "").replace("\r", "").strip()
-    clean_chat_id = CHAT_ID.replace("\n", "").replace("\r", "").strip()
 
-    if not clean_bot_token or not clean_chat_id:
+    if not clean_bot_token or not CHAT_IDS:
         print("[AUTH WARNING] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing! Please configure them in your GitHub Repository Secrets (Settings -> Secrets and variables -> Actions).")
         return False
 
     api_url = f"https://api.telegram.org/bot{clean_bot_token}/sendMessage"
-    payload_dict = {
-        "chat_id": clean_chat_id,
-        "text": text,
-        "disable_web_page_preview": False
-    }
-    if reply_markup:
-        payload_dict["reply_markup"] = reply_markup
-
-    payload = json.dumps(payload_dict).encode("utf-8")
     headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+    success_any = False
 
-    try:
-        req = urllib.request.Request(api_url, data=payload, headers=headers)
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            data = json.loads(resp.read().decode())
-            if data.get("ok"):
-                print("[SUCCESS] Telegram message successfully delivered!")
-                return True
-            else:
-                print(f"[FAIL] Telegram returned error: {data}")
-                return False
-    except Exception as e:
-        print(f"[FAIL] Exception sending Telegram message: {e}")
-        return False
+    for cid in CHAT_IDS:
+        payload_dict = {
+            "chat_id": cid,
+            "text": text,
+            "disable_web_page_preview": False
+        }
+        if reply_markup:
+            payload_dict["reply_markup"] = reply_markup
+
+        payload = json.dumps(payload_dict).encode("utf-8")
+        try:
+            req = urllib.request.Request(api_url, data=payload, headers=headers)
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode())
+                if data.get("ok"):
+                    print(f"[SUCCESS] Telegram message successfully delivered to {cid}!")
+                    success_any = True
+                else:
+                    print(f"[FAIL] Telegram returned error for {cid}: {data}")
+        except Exception as e:
+            print(f"[FAIL] Exception sending Telegram message to {cid}: {e}")
+
+    return success_any
 
 def process_telegram_snooze_commands():
     """
@@ -492,8 +494,7 @@ Live 24K Benchmark Spot: Rs {spot_rate:,}/gram
 2. SuperCoins: Redeem up to 500 SuperCoins for extra Rs 500 off.
 3. Bank Cards: Extra 5% Cashback via SBI Cashback Card or Tata Neu HDFC.
 
-⚡ Flash Warning: Myntra Blink Deals can expire in 1 to 15 minutes! Claim immediately.
-Audited by CA Jyotika Kukreja (@financegyannjk)"""
+⚡ Flash Warning: Myntra Blink Deals can expire in 1 to 15 minutes! Claim immediately."""
 
     snooze_btn_key = f"{active_coupon}_{primary_id}"
     reply_markup = {
@@ -716,8 +717,7 @@ Live 24K Benchmark: Rs {spot:,}/gram
 Active Coupon Status: Standby (No active coupon live right now on Myntra)
 Monitored 24K Coins: {result['k24_count']}
 
-Interactive Control: Every deal alert includes a [✅ Yes, I know this deal (Mute 1 Hour)] button.
-Audited by CA Jyotika Kukreja (@financegyannjk)"""
+Interactive Control: Every deal alert includes a [✅ Yes, I know this deal (Mute 1 Hour)] button."""
                 send_telegram_message(status_msg)
             break
 
